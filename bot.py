@@ -1,23 +1,23 @@
 import os
-import asyncio
-import logging
 import sys
+import logging
+import asyncio
 import psycopg2
 from telegram import Bot
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 logging.basicConfig(level=logging.INFO)
 
+# Load environment variables
 TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID_RAW = os.getenv("CHAT_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Validate environment variables early with clear errors
+# Validate environment variables
 if not TOKEN:
     logging.error("Missing BOT_TOKEN environment variable")
     sys.exit("Missing BOT_TOKEN environment variable")
 
-if CHAT_ID_RAW is None:
+if not CHAT_ID_RAW:
     logging.error("Missing CHAT_ID environment variable")
     sys.exit("Missing CHAT_ID environment variable")
 try:
@@ -30,10 +30,10 @@ if not DATABASE_URL:
     logging.error("Missing DATABASE_URL environment variable")
     sys.exit("Missing DATABASE_URL environment variable")
 
+# Initialize bot
 bot = Bot(TOKEN)
-scheduler = AsyncIOScheduler(timezone="Asia/Tashkent")
 
-# PostgreSQL connection with error handling
+# Connect to PostgreSQL
 try:
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
@@ -41,7 +41,7 @@ except Exception as e:
     logging.exception("Failed to connect to the database")
     sys.exit(f"Database connection failed: {e}")
 
-# Table yaratish (agar mavjud bo‘lmasa)
+# Create table if not exists
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,
@@ -50,10 +50,9 @@ CREATE TABLE IF NOT EXISTS settings (
 """)
 conn.commit()
 
-# Agar qiymat yo'q bo'lsa 0 qilib qo'yamiz
+# Initialize week_index
 cursor.execute("SELECT week_index FROM settings WHERE id=1")
 row = cursor.fetchone()
-
 if row is None:
     cursor.execute("INSERT INTO settings (id, week_index) VALUES (1, 0)")
     conn.commit()
@@ -61,6 +60,7 @@ if row is None:
 else:
     week_index = row[0]
 
+# Duty list
 duty_list = [
     "Mubina, @mubinafinance",
     "Madina, @utkirjonovna7",
@@ -93,27 +93,22 @@ Bismillahir Rohmanir Rohiym
 """
     try:
         await bot.send_message(chat_id=CHAT_ID, text=message)
+        logging.info("Duty message sent successfully")
     except Exception:
         logging.exception("Failed to send duty message to chat_id=%s", CHAT_ID)
         return
 
-    # Keyingi hafta
+    # Update week_index
     week_index = (week_index + 1) % len(duty_list)
     try:
         cursor.execute("UPDATE settings SET week_index=%s WHERE id=1", (week_index,))
         conn.commit()
+        logging.info("Week index updated to %s", week_index)
     except Exception:
         logging.exception("Failed to update week_index in database")
 
 async def main():
-    scheduler.add_job(
-        send_duty,
-        trigger='cron',
-        day_of_week='sat',
-        hour=20,
-        minute=10
-    )
-    scheduler.start()
-    await asyncio.sleep(float('inf'))
+    await send_duty()  # Run once and exit
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
