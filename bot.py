@@ -110,8 +110,8 @@ async def main():
         send_duty,
         trigger='cron',
         day_of_week='sat',
-        hour=19,
-        minute=0
+        hour=20,
+        minute=10
     )
     scheduler.start()
     await asyncio.sleep(float('inf'))
